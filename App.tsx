@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Calendar, ClipboardList, Zap, Database } from 'lucide-react';
+import { LayoutDashboard, Calendar, ClipboardList, Zap, Database, AlertCircle } from 'lucide-react';
 import InputCenter from './components/InputCenter';
 import ScheduleBoard from './components/ScheduleBoard';
 import SummarySection from './components/SummarySection';
@@ -34,8 +34,13 @@ const App: React.FC = () => {
       const result = await generateWeeklySchedule(inputData);
       setScheduledTasks(result);
       setView('board');
-    } catch (err) {
-      setError("Failed to generate schedule. Please try again.");
+    } catch (err: any) {
+      console.error(err);
+      if (err.message && err.message.includes("API Key")) {
+        setError("API Key is missing. Please add REACT_APP_API_KEY or VITE_API_KEY to your Vercel Environment Variables.");
+      } else {
+        setError("Failed to generate schedule. Check your connection or API limit.");
+      }
     } finally {
       setLoading(false);
     }
@@ -108,6 +113,21 @@ const App: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold text-gray-800 mb-2">AI is Planning</h3>
                 <p className="text-gray-500">Creating your personalized weekly schedule...</p>
+            </div>
+        )}
+        
+        {error && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[60] animate-fadeIn">
+               <div className="bg-red-50 text-red-600 border border-red-200 px-6 py-4 rounded-xl shadow-xl flex items-center gap-3 max-w-md">
+                  <AlertCircle size={24} className="shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-sm">Error</h4>
+                    <p className="text-xs opacity-90">{error}</p>
+                  </div>
+                  <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-700">
+                     <ClipboardList size={18} />
+                  </button>
+               </div>
             </div>
         )}
 

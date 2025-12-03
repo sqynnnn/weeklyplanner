@@ -114,40 +114,70 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
       }
   };
 
+  // Robust Export Function using Clone Strategy
   const exportAsImage = async () => {
-    if (captureRef.current && !isExporting) {
-      setIsExporting(true);
-      try {
-        // Wait a moment for any re-renders or styles to settle
-        await new Promise(resolve => setTimeout(resolve, 100));
+    if (!captureRef.current || isExporting) return;
 
-        const canvas = await html2canvas(captureRef.current, {
-          scale: 2, // Higher resolution (Retina-like)
-          useCORS: true, // Handle external images/fonts
-          backgroundColor: '#ffffff', // Force white background
-          logging: false, 
-          // allowTaint MUST be false (default) to allow toDataURL to work securely
-          allowTaint: false, 
-          ignoreElements: (element) => {
-             // Ignore any elements with explicit ignore class if needed
-             return element.classList.contains('export-ignore');
-          }
-        });
-        
-        const link = document.createElement('a');
-        link.download = `SmartPlan-${selectedDayName}-${selectedDate.toISOString().split('T')[0]}.png`;
-        link.href = canvas.toDataURL('image/png');
-        
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-      } catch (error: any) {
-        console.error("Export failed:", error);
-        alert(`Export failed: ${error.message || 'Unknown error'}. Please try again.`);
-      } finally {
-        setIsExporting(false);
+    setIsExporting(true);
+
+    try {
+      // 1. Create a container for the clone that sits off-screen but has fixed width
+      // This ensures consistency regardless of the user's screen size (mobile vs desktop)
+      const cloneContainer = document.createElement('div');
+      cloneContainer.style.position = 'absolute';
+      cloneContainer.style.top = '-9999px';
+      cloneContainer.style.left = '-9999px';
+      cloneContainer.style.width = '800px'; // Fixed width for high-quality export
+      cloneContainer.style.zIndex = '-1';
+      document.body.appendChild(cloneContainer);
+
+      // 2. Clone the node
+      // We must deep clone the node to capture all children
+      const originalNode = captureRef.current;
+      const clonedNode = originalNode.cloneNode(true) as HTMLElement;
+      
+      // 3. Clean up the clone for export
+      // Remove any hidden elements or interaction buttons that might look weird
+      // (The 'data-html2canvas-ignore' attribute handles most, but we can force display block)
+      clonedNode.style.height = 'auto'; // Ensure full height is captured
+      clonedNode.style.overflow = 'visible';
+      clonedNode.style.boxShadow = 'none'; // Simplify rendering
+      
+      // Make the header visible in the clone
+      const header = clonedNode.querySelector('.export-visible');
+      if (header) {
+        (header as HTMLElement).style.opacity = '1';
       }
+
+      cloneContainer.appendChild(clonedNode);
+
+      // 4. Capture
+      const canvas = await html2canvas(clonedNode, {
+        scale: 2, // High resolution
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        allowTaint: false, // Critical for security/export ability
+        height: clonedNode.scrollHeight + 50, // Add some padding
+        windowWidth: 800,
+      });
+
+      // 5. Cleanup
+      document.body.removeChild(cloneContainer);
+
+      // 6. Download
+      const link = document.createElement('a');
+      link.download = `SmartPlan-${selectedDayName}-${selectedDate.toISOString().split('T')[0]}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error: any) {
+      console.error("Export failed:", error);
+      alert(`Export failed: ${error.message}. Try refreshing the page.`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -242,7 +272,7 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
             className="bg-white rounded-[2rem] shadow-sm border border-gray-100 min-h-[500px] p-6 relative"
         >
             {/* Header inside the capture to show context in image */}
-            <div className="absolute top-6 right-6 opacity-0 export-visible">
+            <div className="absolute top-6 right-6 opacity-0 export-visible transition-opacity">
                 <span className="text-gray-300 font-bold text-xl">{selectedDayName}</span>
             </div>
 
@@ -369,7 +399,7 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
                 className="flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm transition bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100 hover:shadow-md disabled:opacity-50"
              >
                {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
-               {isExporting ? 'Exporting...' : 'Export Plan as Image'}
+               {isExporting ? 'Generating Image...' : 'Export Plan as Image'}
              </button>
            </div>
         )}

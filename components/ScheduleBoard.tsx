@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { ScheduledTask, DAYS, DAY_LABELS, PERIOD_LABELS, WeekDay } from '../types';
 import html2canvas from 'html2canvas';
-import { Check, X, RotateCw, Clock, Download, ChevronLeft, ChevronRight, Edit2, Wand2, Calendar as CalendarIcon, Save } from 'lucide-react';
+import { Check, X, RotateCw, Clock, Download, ChevronLeft, ChevronRight, Edit2, Wand2, Calendar as CalendarIcon, Save, Loader2 } from 'lucide-react';
 
 interface ScheduleBoardProps {
   tasks: ScheduledTask[];
@@ -30,18 +30,15 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [substitutingTask, setSubstitutingTask] = useState<ScheduledTask | null>(null);
-  const boardRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Ref specifically for the content we want to capture
+  const captureRef = useRef<HTMLDivElement>(null);
 
   const weekDays = getWeekDays(selectedDate);
 
-  // Map the selected date to a WeekDay string (e.g. 'Monday') to filter tasks
-  // NOTE: This assumes the generated schedule is a "template" that applies to any week.
-  // Ideally, tasks would have specific dates, but the generator returns a weekly template.
   const selectedDayName = DAYS[selectedDate.getDay() === 0 ? 6 : selectedDate.getDay() - 1];
   
-  // Logic: In a real app, you'd filter by specific date. Here, we filter by the recurring WeekDay
-  // unless the task has been postponed to a specific date (which we don't fully track in this simplified model).
-  // We'll stick to the "Weekly Template" model for simplicity.
   const dayTasks = tasks.filter(t => t.day === selectedDayName);
 
   const handleDragEnd = (result: DropResult) => {
@@ -118,12 +115,39 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
   };
 
   const exportAsImage = async () => {
-    if (boardRef.current) {
-      const canvas = await html2canvas(boardRef.current);
-      const link = document.createElement('a');
-      link.download = `schedule-${selectedDate.toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL();
-      link.click();
+    if (captureRef.current && !isExporting) {
+      setIsExporting(true);
+      try {
+        // Wait a moment for any re-renders or styles to settle
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const canvas = await html2canvas(captureRef.current, {
+          scale: 2, // Higher resolution (Retina-like)
+          useCORS: true, // Handle external images/fonts
+          backgroundColor: '#ffffff', // Force white background
+          logging: false, 
+          // allowTaint MUST be false (default) to allow toDataURL to work securely
+          allowTaint: false, 
+          ignoreElements: (element) => {
+             // Ignore any elements with explicit ignore class if needed
+             return element.classList.contains('export-ignore');
+          }
+        });
+        
+        const link = document.createElement('a');
+        link.download = `SmartPlan-${selectedDayName}-${selectedDate.toISOString().split('T')[0]}.png`;
+        link.href = canvas.toDataURL('image/png');
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+      } catch (error: any) {
+        console.error("Export failed:", error);
+        alert(`Export failed: ${error.message || 'Unknown error'}. Please try again.`);
+      } finally {
+        setIsExporting(false);
+      }
     }
   };
 
@@ -146,7 +170,7 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
   return (
     <div className="flex flex-col h-full bg-gray-50/50 relative">
       {/* Top Header */}
-      <div className="p-6 pb-2">
+      <div className="p-6 pb-2 shrink-0">
         <div className="flex justify-between items-center mb-6">
            <div>
              <h2 className="text-2xl font-bold text-gray-900">Daily Board</h2>
@@ -161,7 +185,6 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
                   <div className="text-sm font-bold text-gray-800">{selectedDayName}</div>
                   <div className="text-xs text-gray-400">{selectedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric'})}</div>
                   
-                  {/* Hidden native date picker trigger just in case user wants to jump far */}
                   <input 
                     type="date" 
                     className="absolute inset-0 opacity-0 cursor-pointer" 
@@ -210,9 +233,19 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
         </div>
       </div>
 
-      {/* Main Board Area */}
-      <div className="flex-1 overflow-y-auto px-6 pb-20" ref={boardRef}>
-        <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 min-h-[500px] p-6 relative">
+      {/* Main Board Area - Scrollable */}
+      <div className="flex-1 overflow-y-auto px-6 pb-20">
+        
+        {/* The Capture Target - Only this part will be in the image */}
+        <div 
+            ref={captureRef} 
+            className="bg-white rounded-[2rem] shadow-sm border border-gray-100 min-h-[500px] p-6 relative"
+        >
+            {/* Header inside the capture to show context in image */}
+            <div className="absolute top-6 right-6 opacity-0 export-visible">
+                <span className="text-gray-300 font-bold text-xl">{selectedDayName}</span>
+            </div>
+
             {dayTasks.length === 0 ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center py-20 animate-fadeIn">
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
@@ -220,7 +253,7 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
                     </div>
                     <p className="text-gray-500 font-medium mb-2">No tasks for this day.</p>
                     {onGenerate ? (
-                      <button onClick={onGenerate} className="text-blue-600 font-bold hover:underline text-sm">
+                      <button onClick={onGenerate} data-html2canvas-ignore className="text-blue-600 font-bold hover:underline text-sm">
                         Generate Now
                       </button>
                     ) : (
@@ -262,8 +295,8 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
                                                         </h3>
                                                     </div>
                                                     
-                                                    {/* Hover Actions */}
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {/* Hover Actions (Ignored in export to keep it clean) */}
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" data-html2canvas-ignore>
                                                         <button onClick={() => setEditingTask(task)} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-blue-50 transition">
                                                             <Edit2 size={16} />
                                                         </button>
@@ -279,7 +312,7 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
                                                     </p>
                                                 )}
 
-                                                <div className="flex items-center gap-3 mt-4">
+                                                <div className="flex items-center gap-3 mt-4" data-html2canvas-ignore>
                                                     <button 
                                                         onClick={() => toggleComplete(task.id)}
                                                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all transform active:scale-95 ${
@@ -327,10 +360,16 @@ const ScheduleBoard: React.FC<ScheduleBoardProps> = ({ tasks, onTasksUpdate, onG
             )}
         </div>
         
+        {/* Export Button - Outside the capture area */}
         {dayTasks.length > 0 && (
-           <div className="mt-6 flex justify-center">
-             <button onClick={exportAsImage} className="flex items-center gap-2 text-gray-400 hover:text-gray-800 text-sm transition">
-               <Download size={16} /> Export as Image
+           <div className="mt-6 flex justify-center pb-6">
+             <button 
+                onClick={exportAsImage} 
+                disabled={isExporting}
+                className="flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm transition bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100 hover:shadow-md disabled:opacity-50"
+             >
+               {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
+               {isExporting ? 'Exporting...' : 'Export Plan as Image'}
              </button>
            </div>
         )}

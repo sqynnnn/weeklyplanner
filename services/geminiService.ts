@@ -1,7 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { InputData, ScheduledTask, WeekDay, DAYS } from "../types";
 
-const apiKey = process.env.API_KEY || '';
+// Support both standard process.env (Node) and import.meta.env (Vite/Vercel)
+// The 'as any' cast is used to avoid TypeScript errors if types aren't fully set up for Vite
+const apiKey = (import.meta as any).env?.VITE_API_KEY || process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
 const MODEL_NAME = 'gemini-2.5-flash';

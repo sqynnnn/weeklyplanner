@@ -37,7 +37,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       if (err.message && err.message.includes("API Key")) {
-        setError("API Key is missing. Please add the environment variable 'API_KEY' to your Vercel Project Settings -> Environment Variables, then Redeploy.");
+        setError("API Key is missing. Please add the environment variable 'VITE_API_KEY' to your Vercel Project Settings -> Environment Variables, then Redeploy.");
       } else {
         setError("Failed to generate schedule. Check your connection or API limit.");
       }
